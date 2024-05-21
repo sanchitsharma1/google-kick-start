@@ -1,0 +1,83 @@
+import cx_Oracle
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Database connection details
+dsn_tns = cx_Oracle.makedsn('HOSTNAME', 'PORT', service_name='SERVICE_NAME')
+connection = cx_Oracle.connect(user='USERNAME', password='PASSWORD', dsn=dsn_tns)
+
+# AES key (32 bytes for AES-256)
+key = b'Sixteen byte keySixteen byte key'
+
+def aes_encrypt(data, key):
+    cipher = AES.new(key, AES.MODE_CBC)
+    iv = cipher.iv
+    encrypted = cipher.encrypt(pad(data.encode('utf-8'), AES.block_size))
+    return base64.b64encode(iv + encrypted).decode('utf-8')
+
+def aes_decrypt(enc_data, key):
+    enc_data = base64.b64decode(enc_data)
+    iv = enc_data[:AES.block_size]
+    encrypted = enc_data[AES.block_size:]
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    decrypted = unpad(cipher.decrypt(encrypted), AES.block_size)
+    return decrypted.decode('utf-8')
+
+def encrypt_mdn_in_table(table_name):
+    cursor = connection.cursor()
+    
+    # Check if 'mdn' column exists in the current table
+    cursor.execute(f"""
+        SELECT column_name FROM all_tab_columns 
+        WHERE table_name = '{table_name}' AND column_name = 'MDN'
+    """)
+    
+    columns = cursor.fetchall()
+    
+    if columns:
+        print(f"Encrypting 'mdn' column in table: {table_name}")
+        
+        # Select and encrypt all rows in the 'mdn' column
+        cursor.execute(f"SELECT mdn FROM {table_name}")
+        rows = cursor.fetchall()
+        
+        for row in rows:
+            mdn = row[0]
+            if mdn:
+                encrypted_mdn = aes_encrypt(mdn, key)
+                cursor.execute(f"""
+                    UPDATE {table_name} SET mdn = :1 WHERE mdn = :2
+                """, (encrypted_mdn, mdn))
+        
+        connection.commit()
+    cursor.close()
+
+def find_and_encrypt_mdn_columns_parallel(connection, key):
+    cursor = connection.cursor()
+    
+    # Find all tables
+    cursor.execute("""
+        SELECT table_name FROM all_tables WHERE owner = 'YOUR_SCHEMA'
+    """)
+    
+    tables = cursor.fetchall()
+    cursor.close()
+    
+    table_names = [table[0] for table in tables]
+    
+    # Use ThreadPoolExecutor for parallel processing
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(encrypt_mdn_in_table, table_name) for table_name in table_names]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Error processing table: {e}")
+
+# Encrypt the 'mdn' column in all tables
+find_and_encrypt_mdn_columns_parallel(connection, key)
+
+# Close the connection
+connection.close()
