@@ -1,0 +1,35 @@
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad
+from Crypto.Random import get_random_bytes
+import base64
+
+def encrypt_aes_128(plain_text, key):
+    if len(key) != 16:
+        raise ValueError("Key must be 16 bytes long for AES-128")
+
+    iv = get_random_bytes(16)  # Initialization vector
+    cipher = AES.new(key.encode('utf-8'), AES.MODE_CBC, iv)
+    encrypted_bytes = cipher.encrypt(pad(plain_text.encode('utf-8'), AES.block_size))
+    encrypted_text = base64.b64encode(iv + encrypted_bytes).decode('utf-8')
+    return encrypted_text
+
+def encrypt_aes_256(plain_text, key):
+    if len(key) != 32:
+        raise ValueError("Key must be 32 bytes long for AES-256")
+
+    iv = get_random_bytes(16)  # Initialization vector
+    cipher = AES.new(key.encode('utf-8'), AES.MODE_CBC, iv)
+    encrypted_bytes = cipher.encrypt(pad(plain_text.encode('utf-8'), AES.block_size))
+    encrypted_text = base64.b64encode(iv + encrypted_bytes).decode('utf-8')
+    return encrypted_text
+
+# Example usage
+key_128 = 'thisisakey123456'  # 16 bytes key for AES-128
+key_256 = 'thisisaverysecurekeyfortesting1234'  # 32 bytes key for AES-256
+plain_text = 'This is a secret message.'
+
+encrypted_text_128 = encrypt_aes_128(plain_text, key_128)
+encrypted_text_256 = encrypt_aes_256(plain_text, key_256)
+
+print('AES-128 Encrypted:', encrypted_text_128)
+print('AES-256 Encrypted:', encrypted_text_256)
